@@ -1,0 +1,46 @@
+10262249
+--- Start Ensemble Training ---
+Fold 1/5 started...
+Fold 2/5 started...
+Fold 3/5 started...
+Fold 4/5 started...
+Fold 5/5 started...
+--- Ensemble Training Finished ---
+
+--- Evaluation with OOF Predictions ---
+Best F1 score: 0.70712
+Best threshold: 0.45
+
+Individual Best F1 Scores (for reference):
+  LightGBM: 0.70109 (Threshold: 0.47)
+  XGBoost:  0.69231 (Threshold: 0.46)
+  CatBoost: 0.69409 (Threshold: 0.44)
+Ensemble submission file saved.
+
+10262334
+--- Start Ensemble Training ---
+Fold 1/5 started...
+Fold 2/5 started...
+Fold 3/5 started...
+Fold 4/5 started...
+Fold 5/5 started...
+--- Ensemble Training Finished ---
+
+--- Evaluation with OOF Predictions ---
+Best F1 score: 0.71282
+Best threshold: 0.38
+
+Individual Best F1 Scores (for reference):
+  LightGBM: 0.72043 (Threshold: 0.39)
+  XGBoost:  0.71892 (Threshold: 0.42)
+  CatBoost: 0.72043 (Threshold: 0.47)
+Ensemble submission file saved.
+
+--- LightGBM performed better than ensemble. Generating submission file... ---
+LightGBM submission file saved.
+
+--- XGBoost performed better than ensemble. Generating submission file... ---
+XGBoost submission file saved.
+
+--- CatBoost performed better than ensemble. Generating submission file... ---
+CatBoost submission file saved.
