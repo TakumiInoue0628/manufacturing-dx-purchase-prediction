@@ -1,4 +1,6 @@
-10262249
+==============================================================================
+
+202510262249
 --- Start Ensemble Training ---
 Fold 1/5 started...
 Fold 2/5 started...
@@ -17,7 +19,9 @@ Individual Best F1 Scores (for reference):
   CatBoost: 0.69409 (Threshold: 0.44)
 Ensemble submission file saved.
 
-10262334
+==============================================================================
+
+202510262334
 --- Start Ensemble Training ---
 Fold 1/5 started...
 Fold 2/5 started...
@@ -44,3 +48,20 @@ XGBoost submission file saved.
 
 --- CatBoost performed better than ensemble. Generating submission file... ---
 CatBoost submission file saved.
+
+==============================================================================
+
+202511061950
+--- Start Ensemble Training ---
+Fold 1/5 started...
+Fold 2/5 started...
+Fold 3/5 started...
+Fold 4/5 started...
+Fold 5/5 started...
+--- Ensemble Training Finished ---
+
+--- Evaluation ---
+Ensemble Best F1: 0.75248 (Threshold: 0.35)
+LightGBM: 0.73247 (Threshold: 0.39)
+XGBoost:  0.73861 (Threshold: 0.27)
+CatBoost: 0.75472 (Threshold: 0.48)
