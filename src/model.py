@@ -8,8 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score, confusion_matrix
 from typing import Dict, Any, Callable
 from datetime import datetime
-
-# --- 添削・改善した最適化関数 ---
+from scipy.optimize import minimize
 
 
 def optimize_model(
@@ -224,10 +223,12 @@ def train_ensemble_models(
     test_preds_cat = np.zeros(n_tests)
 
     print("--- Start Ensemble Training ---")
+    all_valid_indices = []
     for fold, (train_idx, valid_idx) in enumerate(folds.split(X_train_df, y_train_df)):
         print(f"Fold {fold+1}/{folds.n_splits} started...")
         X_train_fold, y_train_fold = X_train_df.iloc[train_idx], y_train_df.iloc[train_idx]
         X_valid_fold, y_valid_fold = X_train_df.iloc[valid_idx], y_train_df.iloc[valid_idx]
+        all_valid_indices.append(valid_idx)
 
         # LightGBM
         lgb_model = lgb.LGBMClassifier(**lgb_best_params)
@@ -266,8 +267,46 @@ def train_ensemble_models(
 
     print("--- Ensemble Training Finished ---")
 
-    # アンサンブル予測
-    oof_preds_ensemble = (oof_preds_lgb + oof_preds_xgb + oof_preds_cat) / 3
+    # アンサンブル予測(ブレンディング)
+    oof_preds = np.stack([oof_preds_lgb, oof_preds_xgb, oof_preds_cat], axis=1)
+    def objective_function(weights):
+        # 重み付き平均を計算
+        weighted_oof_preds = np.dot(oof_preds, weights)
+        # 最適な閾値を見つける
+        f1_scores_list = [
+            f1_score(y_train_df, (weighted_oof_preds > t).astype(int)) for t in thresholds
+        ]
+        best_f1 = np.max(f1_scores_list)
+        # 最小化するため、負のF1スコアを返す
+        return -best_f1
+    # 制約条件: 重みの合計が1
+    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+    # 境界条件: 各重みは0から1の間
+    bounds = [(0, 1) for _ in range(3)]
+    # 初期値: 均等な重み
+    initial_weights = np.array([1/3, 1/3, 1/3])
+    # 最適化の実行
+    result = minimize(
+        objective_function,
+        initial_weights,
+        method='SLSQP', # 制約付き最適化のための標準的な手法
+        bounds=bounds,
+        constraints=constraints
+    )
+    if not result.success:
+        print("Warning: Weight optimization failed. Using equal weights.")
+        best_weights = initial_weights
+    else:
+        best_weights = result.x
+    print(f"Optimal Weights - LGB: {best_weights[0]:.4f}, XGB: {best_weights[1]:.4f}, CAT: {best_weights[2]:.4f}")
+    # 重み付き平均でアンサンブル予測
+    oof_preds_ensemble = (
+        best_weights[0] * oof_preds_lgb +
+        best_weights[1] * oof_preds_xgb +
+        best_weights[2] * oof_preds_cat
+    )
+
+    # 最適な閾値の探索とF1スコア計算
     f1_scores = [
         f1_score(y_train_df, (oof_preds_ensemble > t).astype(int)) for t in thresholds]
     best_threshold = thresholds[np.argmax(f1_scores)]
@@ -278,32 +317,66 @@ def train_ensemble_models(
         f1_score(y_train_df, (oof_preds_lgb > t).astype(int)) for t in thresholds]
     best_threshold_lgb = thresholds[np.argmax(f1_scores_lgb)]
     best_f1_lgb = np.max(f1_scores_lgb)
-
     f1_scores_xgb = [
         f1_score(y_train_df, (oof_preds_xgb > t).astype(int)) for t in thresholds]
     best_threshold_xgb = thresholds[np.argmax(f1_scores_xgb)]
     best_f1_xgb = np.max(f1_scores_xgb)
-
     f1_scores_cat = [
         f1_score(y_train_df, (oof_preds_cat > t).astype(int)) for t in thresholds]
     best_threshold_cat = thresholds[np.argmax(f1_scores_cat)]
     best_f1_cat = np.max(f1_scores_cat)
 
     print("\n--- Evaluation ---")
-    print(
-        f"Ensemble Best F1: {best_f1_score:.5f} (Threshold: {best_threshold:.2f})")
+    print(f"Ensemble Best F1: {best_f1_score:.5f} (Threshold: {best_threshold:.2f})")
     print(f"LightGBM: {best_f1_lgb:.5f} (Threshold: {best_threshold_lgb:.2f})")
     print(f"XGBoost:  {best_f1_xgb:.5f} (Threshold: {best_threshold_xgb:.2f})")
     print(f"CatBoost: {best_f1_cat:.5f} (Threshold: {best_threshold_cat:.2f})")
+
+    # Foldごとの安定性評価
+    print("\n--- Fold-wise Stability Evaluation (using global thresholds) ---")
+    fold_results = []
+    for i, valid_idx in enumerate(all_valid_indices):
+        y_valid_fold = y_train_df.iloc[valid_idx]
+        # このFoldのOOF予測値
+        oof_lgb_fold = oof_preds_lgb[valid_idx]
+        oof_xgb_fold = oof_preds_xgb[valid_idx]
+        oof_cat_fold = oof_preds_cat[valid_idx]
+        # グローバルな重みでアンサンブル
+        oof_ensemble_fold = (
+            best_weights[0] * oof_lgb_fold +
+            best_weights[1] * oof_xgb_fold +
+            best_weights[2] * oof_cat_fold
+        )
+        # グローバルな閾値を使ってF1を計算
+        f1_ensemble_fold = f1_score(y_valid_fold, (oof_ensemble_fold > best_threshold).astype(int))
+        f1_lgb_fold = f1_score(y_valid_fold, (oof_lgb_fold > best_threshold_lgb).astype(int))
+        f1_xgb_fold = f1_score(y_valid_fold, (oof_xgb_fold > best_threshold_xgb).astype(int))
+        f1_cat_fold = f1_score(y_valid_fold, (oof_cat_fold > best_threshold_cat).astype(int))
+        print(f"  Fold {i+1} F1 -> Ensemble: {f1_ensemble_fold:.5f} | LGB: {f1_lgb_fold:.5f} | XGB: {f1_xgb_fold:.5f} | CAT: {f1_cat_fold:.5f}")
+        fold_results.append({
+            'fold': i + 1,
+            'ensemble_f1': f1_ensemble_fold,
+            'lgb_f1': f1_lgb_fold,
+            'xgb_f1': f1_xgb_fold,
+            'cat_f1': f1_cat_fold
+        })
+    # 平均と標準偏差を計算
+    all_fold_f1s = [r['ensemble_f1'] for r in fold_results]
+    mean_f1 = np.mean(all_fold_f1s)
+    std_f1 = np.std(all_fold_f1s)
+    print(f"Ensemble Fold F1 Mean: {mean_f1:.5f}, Std: {std_f1:.5f}")
 
     # 提出ファイル生成
     now = datetime.now()
     timestamp = now.strftime("%m%d%H%M")
     submission_files = []
 
-    # アンサンブル
+    # 重み付き平均でテストデータの予測値を計算
     test_preds_ensemble = (
-        test_preds_lgb + test_preds_xgb + test_preds_cat) / 3
+        best_weights[0] * test_preds_lgb +
+        best_weights[1] * test_preds_xgb +
+        best_weights[2] * test_preds_cat
+    )
     final_predictions = (test_preds_ensemble > best_threshold).astype(int)
     submit_df_ensemble = sample_submit.copy()
     submit_df_ensemble[1] = final_predictions
@@ -347,5 +420,8 @@ def train_ensemble_models(
             'XGBoost': (best_f1_xgb, best_threshold_xgb),
             'CatBoost': (best_f1_cat, best_threshold_cat)
         },
-        'submission_files': submission_files
+        'submission_files': submission_files,
+        'optimal_weights': best_weights.tolist(),
+        'fold_results': fold_results,
+        'fold_f1_mean_std': (mean_f1, std_f1)
     }

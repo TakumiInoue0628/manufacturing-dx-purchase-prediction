@@ -61,11 +61,23 @@ def analyze_tfidf_diff(
 
 # 特徴量エンジニアリング関数
 def feature_engineering(df):
-    df['自己資本比率'] = df['自己資本'] / (df['総資産'] + 1e-6)
-    df['売上高営業利益率'] = df['営業利益'] / (df['売上'] + 1e-6)
-    df['総資産回転率'] = df['売上'] / (df['総資産'] + 1e-6)
-    df['負債比率'] = df['負債'] / (df['自己資本'] + 1e-6)
-    df['規模収益性'] = df['従業員数'] * df['売上高営業利益率']
+    epsilon = 1e-6 # ゼロ除算を避けるための微小量
+    #df['自己資本比率'] = df['自己資本'] / (df['総資産'] + epsilon)
+    df['営業利益率'] = df['営業利益'] / (df['売上'] + epsilon)
+    df['総資産回転率'] = df['売上'] / (df['総資産'] + epsilon)
+    #df['負債比率'] = df['負債'] / (df['自己資本'] + epsilon)
+    #df['規模収益性'] = df['従業員数'] * df['営業利益率']
+    df['ROA'] = df['当期純利益'] / (df['総資産'] + epsilon)
+    df['営業CFマージン'] = df['営業CF'] / (df['売上'] + epsilon)
+    df['流動比率'] = df['流動資産'] / (df['負債'] + epsilon)
+    #df['有形固定資産変動'] = df['有形固定資産変動'] / (df['総資産'] + epsilon)
+    df['無形固定資産変動'] = df['無形固定資産変動(ソフトウェア関連)'] / (df['総資産'] + epsilon)
+    #df['従業員一人当たり売上'] = df['売上'] / (df['従業員数'] + epsilon)
+    #df['従業員一人当たり営業利益'] = df['営業利益'] / (df['従業員数'] + epsilon)
+    #df['負債純資産倍率'] = df['負債'] / (df['純資産'] + epsilon)
+    df['投資効率対利益'] = df['無形固定資産変動(ソフトウェア関連)'] / (df['営業利益'] + epsilon)
+    df['投資効率対CF'] = df['無形固定資産変動(ソフトウェア関連)'] / (df['営業CF'] + epsilon)
+    df['新規投資度合い'] = df['無形固定資産変動(ソフトウェア関連)'] / (df['減価償却費'] + epsilon)
     return df
 
 
@@ -130,3 +142,13 @@ def pos_neg_ratio(df, positive_words, negative_words):
     pos_neg_df = pd.DataFrame(pos_neg_features, index=df.index, columns=[
                               df.name + "_pos_ratio", df.name + "_neg_ratio"])
     return pos_neg_df
+
+
+# テキストデータの特徴量化関数（TF-IDF）
+def tfidf_vectorization(df, max_features=100, ngram_range=(1, 2)):
+    df = df.fillna('')
+    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=ngram_range)
+    X_tfidf = vectorizer.fit_transform(df).toarray()
+    df_idfs = pd.DataFrame(X_tfidf, index=df.index)
+    df_idfs.columns = df.name + "_" + vectorizer.get_feature_names_out()
+    return df_idfs
