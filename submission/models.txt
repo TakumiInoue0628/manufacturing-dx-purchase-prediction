@@ -65,3 +65,82 @@ Ensemble Best F1: 0.75248 (Threshold: 0.35)
 LightGBM: 0.73247 (Threshold: 0.39)
 XGBoost:  0.73861 (Threshold: 0.27)
 CatBoost: 0.75472 (Threshold: 0.48)
+
+==============================================================================
+
+202511080100
+--- Start Ensemble Training ---
+Fold 1/5 started...
+Fold 2/5 started...
+Fold 3/5 started...
+Fold 4/5 started...
+Fold 5/5 started...
+--- Ensemble Training Finished ---
+Optimal Weights - LGB: 0.3333, XGB: 0.3333, CAT: 0.3333
+
+--- Evaluation ---
+Ensemble Best F1: 0.71875 (Threshold: 0.45)
+LightGBM: 0.69542 (Threshold: 0.49)
+XGBoost:  0.71649 (Threshold: 0.41)
+CatBoost: 0.72816 (Threshold: 0.44)
+
+--- Fold-wise Stability Evaluation (using global thresholds) ---
+  Fold 1 F1 -> Ensemble: 0.73684 | LGB: 0.68421 | XGB: 0.77333 | CAT: 0.74074
+  Fold 2 F1 -> Ensemble: 0.80556 | LGB: 0.68571 | XGB: 0.76712 | CAT: 0.80000
+  Fold 3 F1 -> Ensemble: 0.69333 | LGB: 0.72000 | XGB: 0.68354 | CAT: 0.71429
+  Fold 4 F1 -> Ensemble: 0.67470 | LGB: 0.68293 | XGB: 0.69048 | CAT: 0.72727
+  Fold 5 F1 -> Ensemble: 0.69231 | LGB: 0.70588 | XGB: 0.67532 | CAT: 0.66667
+Ensemble Fold F1 Mean: 0.72055, Std: 0.04718
+
+==============================================================================
+
+202511080300
+--- Start Ensemble Training ---
+Fold 1/5 started...
+Fold 2/5 started...
+Fold 3/5 started...
+Fold 4/5 started...
+Fold 5/5 started...
+--- Ensemble Training Finished ---
+Optimal Weights - LGB: 0.3333, XGB: 0.3333, CAT: 0.3333
+
+--- Evaluation ---
+Ensemble Best F1: 0.74500 (Threshold: 0.42)
+LightGBM: 0.71579 (Threshold: 0.43)
+XGBoost:  0.72679 (Threshold: 0.48)
+CatBoost: 0.74627 (Threshold: 0.47)
+
+--- Fold-wise Stability Evaluation (using global thresholds) ---
+  Fold 1 F1 -> Ensemble: 0.77647 | LGB: 0.74699 | XGB: 0.77108 | CAT: 0.75610
+  Fold 2 F1 -> Ensemble: 0.78947 | LGB: 0.76712 | XGB: 0.69333 | CAT: 0.76543
+  Fold 3 F1 -> Ensemble: 0.75000 | LGB: 0.75676 | XGB: 0.70423 | CAT: 0.75000
+  Fold 4 F1 -> Ensemble: 0.69767 | LGB: 0.62500 | XGB: 0.71605 | CAT: 0.70000
+  Fold 5 F1 -> Ensemble: 0.71233 | LGB: 0.68571 | XGB: 0.74627 | CAT: 0.75949
+Ensemble Fold F1 Mean: 0.74519, Std: 0.03550
+
+
+==============================================================================
+
+202511080400
+--- Start Ensemble Training ---
+Fold 1/5 started...
+Fold 2/5 started...
+Fold 3/5 started...
+Fold 4/5 started...
+Fold 5/5 started...
+--- Ensemble Training Finished ---
+Optimal Weights - LGB: 0.3333, XGB: 0.3333, CAT: 0.3333
+
+--- Evaluation ---
+Ensemble Best F1: 0.73737 (Threshold: 0.44)
+LightGBM: 0.72165 (Threshold: 0.46)
+XGBoost:  0.73600 (Threshold: 0.47)
+CatBoost: 0.73210 (Threshold: 0.49)
+
+--- Fold-wise Stability Evaluation (using global thresholds) ---
+  Fold 1 F1 -> Ensemble: 0.78049 | LGB: 0.75000 | XGB: 0.77500 | CAT: 0.77778
+  Fold 2 F1 -> Ensemble: 0.77500 | LGB: 0.61538 | XGB: 0.72222 | CAT: 0.77922
+  Fold 3 F1 -> Ensemble: 0.75325 | LGB: 0.76923 | XGB: 0.72727 | CAT: 0.72000
+  Fold 4 F1 -> Ensemble: 0.72941 | LGB: 0.75610 | XGB: 0.74074 | CAT: 0.72289
+  Fold 5 F1 -> Ensemble: 0.63889 | LGB: 0.71429 | XGB: 0.70769 | CAT: 0.65714
+Ensemble Fold F1 Mean: 0.73541, Std: 0.05152

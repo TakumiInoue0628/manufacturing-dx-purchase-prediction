@@ -5,7 +5,7 @@ import optuna
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import f1_score, confusion_matrix
+from sklearn.metrics import f1_score, confusion_matrix, precision_score, recall_score
 from typing import Dict, Any, Callable
 from datetime import datetime
 from scipy.optimize import minimize
@@ -127,12 +127,17 @@ def optimize_model(
         # 混合行列を計算
         cm = confusion_matrix(y_train, y_pred_best)
 
+        # 精度、再現率、F1スコアを計算
+        precision = precision_score(y_train, y_pred_best)
+        recall = recall_score(y_train, y_pred_best)
+        f1_oof = f1_score(y_train, y_pred_best)
+
         # 混合行列を整形して表示
         print(
             f"\n--- Confusion Matrix (Best Trial at Threshold: {best_threshold:.4f}) ---")
-        print("--------------------------|Predicted Label              |")
-        print("--------------------------|-----------------------------|")
-        print("--------------------------| Negative (0) | Positive (1) |")
+        print("                          |Predicted Label              |")
+        print("                          |-----------------------------|")
+        print("                          | Negative (0) | Positive (1) |")
         print("-----------|--------------|--------------|--------------|")
         # cm[0, 0] = TN, cm[0, 1] = FP
         print(
@@ -142,6 +147,11 @@ def optimize_model(
         print(
             f"           | Positive (1) | {cm[1, 0]:<12} | {cm[1, 1]:<12} | (FN, TP)")
         print("-----------|--------------|--------------|--------------|")
+        print("\n--- OOF Scores (at Best Threshold) ---")
+        print(f"  Precision: {precision:.5f}")
+        print(f"  Recall:    {recall:.5f}")
+        print(f"  F1 Score:  {f1_oof:.5f} (F1 score on total OOF predictions)")
+        print("  (Note: 'Best F1 Score' above is the CV mean optimized by Optuna.)")
 
     except KeyError:
         print("\n--- Confusion Matrix ---")
