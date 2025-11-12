@@ -9,6 +9,7 @@ from sklearn.metrics import f1_score, confusion_matrix, precision_score, recall_
 from typing import Dict, Any, Callable
 from datetime import datetime
 from scipy.optimize import minimize
+from sklearn.linear_model import LogisticRegression
 
 
 def optimize_model(
@@ -434,4 +435,179 @@ def train_ensemble_models(
         'optimal_weights': best_weights.tolist(),
         'fold_results': fold_results,
         'fold_f1_mean_std': (mean_f1, std_f1)
+    }
+
+
+# 改良版アンサンブル学習関数（ブレンディング＋スタッキング）
+def train_ensemble_models_(
+    X_train_df: pd.DataFrame,
+    y_train_df: pd.Series,
+    X_test_df: pd.DataFrame,
+    lgb_best_params: dict,
+    xgb_best_params: dict,
+    cat_best_params: dict,
+    sample_submit: pd.DataFrame,
+    n_folds: int = 5,
+    early_stopping_rounds: int = 50,
+    thresholds: np.ndarray = np.arange(0.1, 0.5, 0.01),
+    random_state: int = 42
+) -> dict:
+    """
+    LightGBM, XGBoost, CatBoostの最適化済みパラメータを用いてアンサンブル学習（Blending & Stacking）を行う関数。
+    """
+    
+    # --- 1. Base Models Training (Level 1) ---
+    folds = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=random_state)
+    n_trains = X_train_df.shape[0]
+    n_tests = X_test_df.shape[0]
+
+    # OOF予測値とテスト予測値の初期化
+    oof_preds_lgb = np.zeros(n_trains)
+    oof_preds_xgb = np.zeros(n_trains)
+    oof_preds_cat = np.zeros(n_trains)
+    
+    test_preds_lgb = np.zeros(n_tests)
+    test_preds_xgb = np.zeros(n_tests)
+    test_preds_cat = np.zeros(n_tests)
+
+    print("--- Start Base Models Training ---")
+    all_valid_indices = []
+    
+    for fold, (train_idx, valid_idx) in enumerate(folds.split(X_train_df, y_train_df)):
+        print(f"Fold {fold+1}/{folds.n_splits} started...")
+        X_train_fold, y_train_fold = X_train_df.iloc[train_idx], y_train_df.iloc[train_idx]
+        X_valid_fold, y_valid_fold = X_train_df.iloc[valid_idx], y_train_df.iloc[valid_idx]
+        all_valid_indices.append(valid_idx)
+
+        # LightGBM
+        lgb_model = lgb.LGBMClassifier(**lgb_best_params)
+        lgb_model.fit(
+            X_train_fold, y_train_fold,
+            eval_set=[(X_valid_fold, y_valid_fold)],
+            callbacks=[lgb.early_stopping(early_stopping_rounds, verbose=False)]
+        )
+        oof_preds_lgb[valid_idx] = lgb_model.predict_proba(X_valid_fold)[:, 1]
+        test_preds_lgb += lgb_model.predict_proba(X_test_df)[:, 1] / folds.n_splits
+
+        # XGBoost
+        xgb_cp_params = xgb_best_params.copy()
+        xgb_cp_params['early_stopping_rounds'] = early_stopping_rounds
+        xgb_model = xgb.XGBClassifier(**xgb_cp_params)
+        xgb_model.fit(X_train_fold, y_train_fold,
+                      eval_set=[(X_valid_fold, y_valid_fold)],
+                      verbose=False)
+        oof_preds_xgb[valid_idx] = xgb_model.predict_proba(X_valid_fold)[:, 1]
+        test_preds_xgb += xgb_model.predict_proba(X_test_df)[:, 1] / folds.n_splits
+
+        # CatBoost
+        cat_model = CatBoostClassifier(**cat_best_params)
+        cat_model.fit(
+            X_train_fold, y_train_fold,
+            eval_set=[(X_valid_fold, y_valid_fold)],
+            use_best_model=True,
+            early_stopping_rounds=early_stopping_rounds,
+            verbose=False
+        )
+        oof_preds_cat[valid_idx] = cat_model.predict_proba(X_valid_fold)[:, 1]
+        test_preds_cat += cat_model.predict_proba(X_test_df)[:, 1] / folds.n_splits
+
+    print("--- Base Models Training Finished ---")
+
+    # メタ特徴量の作成（Level 1の予測値を結合）
+    train_meta = np.column_stack([oof_preds_lgb, oof_preds_xgb, oof_preds_cat])
+    test_meta = np.column_stack([test_preds_lgb, test_preds_xgb, test_preds_cat])
+
+    # --- 2. Blending Implementation (Optimization) ---
+    print("\n--- Start Blending Optimization ---")
+    def objective_function(weights):
+        weighted_oof_preds = np.dot(train_meta, weights)
+        f1_scores_list = [
+            f1_score(y_train_df, (weighted_oof_preds > t).astype(int)) for t in thresholds
+        ]
+        return -np.max(f1_scores_list)
+
+    constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+    bounds = [(0, 1) for _ in range(3)]
+    initial_weights = np.array([1/3, 1/3, 1/3])
+    
+    result = minimize(objective_function, initial_weights, method='SLSQP', bounds=bounds, constraints=constraints)
+    
+    best_weights = result.x if result.success else initial_weights
+    print(f"Blending Weights - LGB: {best_weights[0]:.4f}, XGB: {best_weights[1]:.4f}, CAT: {best_weights[2]:.4f}")
+    
+    oof_preds_blending = np.dot(train_meta, best_weights)
+    test_preds_blending = np.dot(test_meta, best_weights)
+
+    # --- 3. Stacking Implementation (Meta Model) ---
+    print("\n--- Start Stacking (Logistic Regression) ---")
+    # メタモデルにはロジスティック回帰を使用（過学習しにくいため）
+    meta_model = LogisticRegression(random_state=random_state)
+    meta_model.fit(train_meta, y_train_df)
+    
+    oof_preds_stacking = meta_model.predict_proba(train_meta)[:, 1]
+    test_preds_stacking = meta_model.predict_proba(test_meta)[:, 1]
+    
+    # スタッキングモデルの係数を確認（どのモデルを重要視したか）
+    print(f"Stacking Coefs - LGB: {meta_model.coef_[0][0]:.4f}, XGB: {meta_model.coef_[0][1]:.4f}, CAT: {meta_model.coef_[0][2]:.4f}")
+
+    # --- 4. Threshold Optimization & Scoring ---
+    def get_best_metrics(y_true, y_pred_proba, thresholds):
+        scores = [f1_score(y_true, (y_pred_proba > t).astype(int)) for t in thresholds]
+        best_idx = np.argmax(scores)
+        return np.max(scores), thresholds[best_idx]
+
+    # 各モデルのスコア算出
+    best_f1_blend, best_th_blend = get_best_metrics(y_train_df, oof_preds_blending, thresholds)
+    best_f1_stack, best_th_stack = get_best_metrics(y_train_df, oof_preds_stacking, thresholds)
+    best_f1_lgb, best_th_lgb = get_best_metrics(y_train_df, oof_preds_lgb, thresholds)
+    best_f1_xgb, best_th_xgb = get_best_metrics(y_train_df, oof_preds_xgb, thresholds)
+    best_f1_cat, best_th_cat = get_best_metrics(y_train_df, oof_preds_cat, thresholds)
+
+    print("\n--- Evaluation Results ---")
+    print(f"Blending F1: {best_f1_blend:.5f} (Th: {best_th_blend:.2f})")
+    print(f"Stacking F1: {best_f1_stack:.5f} (Th: {best_th_stack:.2f})")
+    print(f"LightGBM F1: {best_f1_lgb:.5f}")
+    print(f"XGBoost  F1: {best_f1_xgb:.5f}")
+    print(f"CatBoost F1: {best_f1_cat:.5f}")
+
+    # --- 5. Submission Files Generation ---
+    now = datetime.now()
+    timestamp = now.strftime("%m%d%H%M")
+    submission_files = []
+
+    def save_submission(preds, threshold, suffix):
+        final_preds = (preds > threshold).astype(int)
+        submit_df = sample_submit.copy()
+        submit_df[1] = final_preds
+        filename = f'submission_{suffix}_{timestamp}.csv'
+        submit_df.to_csv(filename, index=False, header=False)
+        submission_files.append(filename)
+
+    # Blending Submission
+    save_submission(test_preds_blending, best_th_blend, "blending")
+    
+    # Stacking Submission
+    save_submission(test_preds_stacking, best_th_stack, "stacking")
+
+    # 単体モデル（Blendingより良ければ出力）
+    global_best_f1 = max(best_f1_blend, best_f1_stack)
+    if best_f1_lgb > global_best_f1: save_submission(test_preds_lgb, best_th_lgb, "lgb")
+    if best_f1_xgb > global_best_f1: save_submission(test_preds_xgb, best_th_xgb, "xgb")
+    if best_f1_cat > global_best_f1: save_submission(test_preds_cat, best_th_cat, "cat")
+
+    return {
+        'scores': {
+            'Blending': best_f1_blend,
+            'Stacking': best_f1_stack,
+            'LGB': best_f1_lgb,
+            'XGB': best_f1_xgb,
+            'CAT': best_f1_cat
+        },
+        'thresholds': {
+            'Blending': best_th_blend,
+            'Stacking': best_th_stack
+        },
+        'blending_weights': best_weights.tolist(),
+        'stacking_model': meta_model,
+        'submission_files': submission_files
     }
